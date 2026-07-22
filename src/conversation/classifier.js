@@ -63,7 +63,7 @@ async function callClaude(message, history, safetyGateResult, pricebookMatch) {
 async function callOllama(message, history, safetyGateResult, pricebookMatch) {
   const baseUrl    = process.env.OLLAMA_BASE_URL    ?? 'https://ollama.com';
   const apiKey     = process.env.OLLAMA_API_KEY;
-  const model      = process.env.OLLAMA_MODEL       ?? 'deepseek-v4-flash';
+  const model      = process.env.OLLAMA_MODEL       ?? 'nemotron-3-nano:30b';
   const modelTag   = model.includes(':') ? model : `${model}:latest`;
 
   const safetyBlock = safetyGateResult?.triggered
@@ -98,7 +98,7 @@ async function callOllama(message, history, safetyGateResult, pricebookMatch) {
         'Content-Length': Buffer.byteLength(body),
       },
       body,
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(Number(process.env.OLLAMA_TIMEOUT_MS) || 60000),
     });
 
     if (response.status >= 300 && response.status < 400) {
