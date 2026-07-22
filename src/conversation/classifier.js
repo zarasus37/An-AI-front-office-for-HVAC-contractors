@@ -80,27 +80,45 @@ async function callOllama(message, history, safetyGateResult, pricebookMatch) {
 
   const systemContent = SYSTEM_PROMPT;
 
-  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type':  'application/json',
-    },
-    body: JSON.stringify({
-      model: modelTag,
-      max_tokens: 1024,
-      system:    `${systemContent}\n\n${safetyBlock}\n\n${priceBlock}`,
-      messages: [{ role: 'user', content: userContent }],
-    }),
-  }, { signal: AbortSignal.timeout(30000) });
+  const url = `${baseUrl}/v1/chat/completions`;
+  const body = JSON.stringify({
+    model: modelTag,
+    max_tokens: 1024,
+    system:    `${systemContent}\n\n${safetyBlock}\n\n${priceBlock}`,
+    messages: [{ role: 'user', content: userContent }],
+  });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Ollama ${response.status}: ${err}`);
+  // Follow redirects manually so POST method is preserved (Node fetch drops to GET on 301/302)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type':  'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      body,
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('Location');
+      if (!location) throw new Error(`Ollama redirected with no Location header (${response.status})`);
+      // Use absolute URL if Location is relative
+      url = location.startsWith('http') ? location : new URL(location, baseUrl).toString();
+      continue;
+    }
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Ollama ${response.status}: ${err}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
   }
 
-  const data = await response.json();
-  return data.choices[0].message.content;
+  throw new Error('Ollama too many redirects');
 }
 
 // ── JSON extraction ─────────────────────────────────────────────────────────────
