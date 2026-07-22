@@ -40,6 +40,11 @@ app.use(express.json());                           // JSON API support
 // ── Serve static widget files ─────────────────────────────────────────────────
 app.use(express.static(resolve(__dirname, '../public')));
 
+// ── Root ────────────────────────────────────────────────────────────────────────
+app.get('/', (_req, res) => {
+  res.json({ message: 'HVAC AI API', status: 'ok', ts: new Date().toISOString() });
+});
+
 // ── Health ─────────────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
