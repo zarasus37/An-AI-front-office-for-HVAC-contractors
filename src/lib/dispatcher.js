@@ -110,11 +110,14 @@ export function makeDispatcherNotifier({ logFn = () => {} } = {}) {
     // Try to place the real call
     const sid = await notifyDispatcher(auditEntry, { logFn });
 
-    // If Twilio isn't configured (dev/demo), fall back to console
-    if (sid === null && !process.env.DISPATCHER_PHONE) {
-      console.log('[Dispatcher] ⚠️  ESCALATION — no DISPATCHER_PHONE configured');
-      console.log('[Dispatcher] ⚠️  Transcript:', auditEntry.full_text_preview);
-      console.log('[Dispatcher] ⚠️  Triggers:', auditEntry.triggers?.map(t => t.label).join(', '));
+    // If Twilio call failed and we have DISPATCHER_PHONE, log it loudly
+    if (sid === null && process.env.DISPATCHER_PHONE) {
+      console.warn(`[Dispatcher] ⚠️  Twilio call FAILED — check TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER`);
+    }
+
+    // Log regardless — visibility into what the dispatcher did
+    if (sid !== null) {
+      console.log(`[Dispatcher] ✅ Call placed to ${dispatcherPhone}, SID: ${sid}`);
     }
   };
 }
