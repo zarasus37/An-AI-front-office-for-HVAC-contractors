@@ -61,9 +61,9 @@ async function callClaude(message, history, safetyGateResult, pricebookMatch) {
  * @returns {Promise<string>} Raw model text response
  */
 async function callOllama(message, history, safetyGateResult, pricebookMatch) {
-  const baseUrl    = process.env.OLLAMA_BASE_URL    ?? 'https://api.ollama.com';
+  const baseUrl    = process.env.OLLAMA_BASE_URL    ?? 'https://ollama.com';
   const apiKey     = process.env.OLLAMA_API_KEY;
-  const model      = process.env.OLLAMA_MODEL       ?? 'llama3.1';
+  const model      = process.env.OLLAMA_MODEL       ?? 'deepseek-v4-flash';
   const modelTag   = model.includes(':') ? model : `${model}:latest`;
 
   const safetyBlock = safetyGateResult?.triggered
@@ -92,7 +92,7 @@ async function callOllama(message, history, safetyGateResult, pricebookMatch) {
       system:    `${systemContent}\n\n${safetyBlock}\n\n${priceBlock}`,
       messages: [{ role: 'user', content: userContent }],
     }),
-  });
+  }, { signal: AbortSignal.timeout(30000) });
 
   if (!response.ok) {
     const err = await response.text();
