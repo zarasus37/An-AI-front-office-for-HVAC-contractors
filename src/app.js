@@ -18,6 +18,8 @@ import { fileURLToPath }   from 'url';
 import { registerSmsRoutes }  from './channels/twilio-sms.js';
 import { registerVoiceRoutes } from './channels/voice.js';
 import { registerWebRoutes }  from './channels/web.js';
+import { registerAdminRoutes } from './multi-tenant/admin.js';
+import { resolveTenant, tenantMiddleware } from './multi-tenant/router.js';
 import { listEntries }         from './queue/store.js';
 import { seedDevRegistry } from './iot/customer-registry.js';
 import { consentStore } from './compliance/consent-store.js';
@@ -66,6 +68,11 @@ if (process.env.NODE_ENV !== 'production') {
 await registerSmsRoutes(app);
 await registerVoiceRoutes(app);
 await registerWebRoutes(app);
+registerAdminRoutes(app);
+
+// ── Tenant resolution middleware (all channel routes) ─────────────────────────
+// Runs after channel routes so tenant is available on req for all handlers
+app.use(tenantMiddleware({ required: false }));
 
 // ── IoT / Ecobee webhook (Layer 4 → queue + session) ──────────────────────────
 app.post('/webhooks/ecobee', async (req, res) => {

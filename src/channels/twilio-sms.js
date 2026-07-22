@@ -33,10 +33,11 @@ async function router() {
 
 /**
  * Validate Twilio webhook signature.
- * Uses TWILIO_AUTH_TOKEN from env.
+ * Uses per-tenant TWILIO_AUTH_TOKEN if tenant is resolved, else global env.
  */
-function isValidTwilioRequest(req) {
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
+function isValidTwilioRequest(req, tenant) {
+  const authToken = tenant?.channels?.twilio?.authToken
+    ?? process.env.TWILIO_AUTH_TOKEN;
   if (!authToken) {
     logger.warn('TWILIO_AUTH_TOKEN not set — skipping signature validation');
     return true; // fail open in dev; fail closed in prod
@@ -93,8 +94,12 @@ async function resolvePricebookMatch(intent, message) {
  * Twilio calls this when an SMS arrives on your Twilio number.
  */
 async function handleInbound(req, res) {
+  // Multi-tenant: resolved by tenantMiddleware in app.js
+  const tenant    = req.tenant ?? { id: process.env.DEFAULT_TENANT_ID ?? 'default', slug: process.env.DEFAULT_TENANT_SLUG ?? 'default' };
+  const tenantId = tenant.id;
+
   // ── 1. Signature validation ─────────────────────────────────────────────────
-  if (!isValidTwilioRequest(req)) {
+  if (!isValidTwilioRequest(req, tenant)) {
     logger.warn('Rejected invalid Twilio signature', { ip: req.ip, path: req.path });
     return res.status(403).send('Forbidden');
   }
@@ -118,7 +123,6 @@ async function handleInbound(req, res) {
 
   // ── 3. TCPA Stop-Word Check ─────────────────────────────────────────────────
   // Check BEFORE enqueueing — stop-words should not generate queue entries
-  const tenantId = process.env.DEFAULT_TENANT_ID ?? 'default';
   const tcpaHandler = new TcpaStopWordHandler({ consentStore, logger });
 
   // Resolve customerId from FSM by phone (for TCPA guard)

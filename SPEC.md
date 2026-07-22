@@ -16,6 +16,7 @@ Live document. Update as realities surface.
 | 4 | IoT Predictive Triage | ✅ DONE | Ecobee webhook → signal extraction → proactive leads → outbound SMS, 21+ tests |
 | 5 | Lifecycle Automation | ✅ DONE | RenewalOutreachEngine, RouteCluster, daily cron script, 14 tests |
 | 6 | Compliance Substrate | ✅ DONE | ConsentStore, TCPA stop-word handler, CIPA disclosure, 32 tests |
+| 7 | Multi-Tenant Onboarding | 🟢 DONE | JSON store, per-tenant config, admin API, tenant resolution, 31 new tests |
 
 ---
 
@@ -276,6 +277,81 @@ Value: rebate capture at point-of-sale + same telemetry reuse.
 - ServiceTitan integration
 - Full compliance audit trail
 - Consent management system
+
+---
+
+## Layer 7 — Multi-Tenant Onboarding ✅ DONE
+
+### Purpose
+Run multiple HVAC contractors on a single deployment. Each contractor (tenant) has their own Twilio credentials, FSM credentials, dispatcher phone, pricebook, and branding. Resolution is automatic from incoming request metadata.
+
+### Tenant Data Model
+```json
+{
+  "id": "uuid",
+  "slug": "acme-hvac",
+  "name": "Acme HVAC Services",
+  "status": "active | suspended | onboarding | archived",
+  "phone": "+15551234567",
+  "address": "123 Main St, Weslaco TX 78596",
+  "dispatcher": "+15550009999",
+  "channels": {
+    "twilio": { "accountSid": "AC...", "authToken": "...", "fromNumber": "+1..." },
+    "webWidget": { "enabled": true, "domain": "acme-hvac.com" }
+  },
+  "fsm": { "type": "jobber", "credentials": { "accessToken": "...", "subdomain": "acme" } },
+  "ai": {
+    "model": "claude",
+    "modelName": "claude-sonnet-4",
+    "escalationThreshold": "emergency",
+    "systemPromptOverride": null
+  },
+  "pricebook": {
+    "laborRate": 95, "tripCharge": 59, "dispatchFee": 0,
+    "serviceTypes": [{ "type": "repair", "label": "AC Repair", "basePrice": 89 }]
+  },
+  "compliance": {
+    "outboundEnabled": true,
+    "ttyHours": { "start": "08:00", "end": "18:00" },
+    "timezone": "America/Chicago"
+  },
+  "createdAt": "ISO8601",
+  "updatedAt": "ISO8601",
+  "activatedAt": "ISO8601 | null"
+}
+```
+
+### Tenant Resolution Priority
+1. `X-Tenant-ID` header (server-to-server API calls)
+2. `?tenant=` query param (web widget embeds)
+3. Subdomain (e.g. `acme.hvac.ai`)
+4. `Origin` header → matched to `channels.webWidget.domain`
+5. Twilio `From` number → matched to `channels.twilio.fromNumber`
+6. `DEFAULT_TENANT_SLUG` env var (fallback)
+
+### Admin API Routes
+```
+POST   /admin/tenants              — Create tenant
+GET    /admin/tenants              — List all tenants
+GET    /admin/tenants/:id          — Get tenant
+PUT    /admin/tenants/:id          — Update tenant config
+DELETE /admin/tenants/:id          — Archive tenant
+POST   /admin/tenants/:id/activate — Activate tenant
+POST   /admin/tenants/:id/suspend  — Suspend tenant
+GET    /admin/tenants/:id/config   — Get runtime env vars (no secrets)
+POST   /admin/tenants/:id/test-fsm — Test FSM connection
+```
+Auth: `X-Admin-API-Key` header checked against `ADMIN_API_KEYS` env var.
+
+### Onboarding Checklist (returned by API on tenant create)
+1. Configure Twilio webhooks → `https://hvac-ai.up.railway.app/sms?tenant={slug}` and `/voice?tenant={slug}`
+2. Add Twilio credentials
+3. Connect FSM (Jobber / Housecall Pro)
+4. Set dispatcher phone
+5. Activate tenant
+
+### Storage
+JSON file at `data/tenants.json` (swappable for Postgres/Supabase in prod). Secrets (Twilio tokens, FSM credentials) should be moved to Azure Key Vault or Railway secrets in production.
 
 ---
 

@@ -19,11 +19,13 @@ import {
   consentStore,
   CONSENT_TYPES,
 } from '../compliance/consent-store.js';
+import { resolveTenant } from '../multi-tenant/router.js';
 
 // ── Signature validation ───────────────────────────────────────────────────────
 
-function isValidTwilioRequest(req) {
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
+function isValidTwilioRequest(req, tenant) {
+  const authToken = tenant?.channels?.twilio?.authToken
+    ?? process.env.TWILIO_AUTH_TOKEN;
   if (!authToken) {
     logger.warn('TWILIO_AUTH_TOKEN not set — skipping voice signature validation');
     return true;
@@ -63,7 +65,11 @@ function hasVoiceConsent(phone) {
  * Otherwise treat as Stage 2 redirect target.
  */
 async function handleVoiceInbound(req, res) {
-  if (!isValidTwilioRequest(req)) {
+  // Multi-tenant: resolved by tenantMiddleware in app.js
+  const tenant    = req.tenant ?? { id: process.env.DEFAULT_TENANT_ID ?? 'default', slug: process.env.DEFAULT_TENANT_SLUG ?? 'default' };
+  const tenantId = tenant.id;
+
+  if (!isValidTwilioRequest(req, tenant)) {
     logger.warn('Rejected invalid voice signature', { ip: req.ip });
     return res.status(403).send('Forbidden');
   }
@@ -78,8 +84,6 @@ async function handleVoiceInbound(req, res) {
     FromState,
     FromCountry,
   } = req.body;
-
-  const tenantId = process.env.DEFAULT_TENANT_ID ?? 'default';
 
   // ── Stage 1: CIPA disclosure for ringing/in-progress calls ────────────────
   // If this is a fresh inbound call (not a redirect from the disclosure),
@@ -216,7 +220,7 @@ function voiceEscalationTwiml(message) {
     </Say>
     <Dial timeout="30" action="/webhooks/voice/status">
       <Number statusCallbackEvent="initiated completed" statusCallback="${process.env.BASE_URL}/webhooks/voice/status">
-        ${process.env.DISPATCHER_PHONE ?? ''}
+        ${(tenant.dispatcher ?? process.env.DISPATCHER_PHONE) ?? ''}
       </Number>
     </Dial>
   </Response>`;
@@ -255,14 +259,15 @@ async function handleVoiceGather(req, res) {
     return res.status(200).set('Content-Type', 'text/xml').send(voiceMainMenuTwiml());
   }
 
-  const tenantId = process.env.DEFAULT_TENANT_ID ?? 'default';
+  const { tenant: tenant2 } = resolveTenant(req);
+  const tenantId = (tenant2 ?? { id: process.env.DEFAULT_TENANT_ID ?? 'default' }).id;
   const entry = enqueue({
     channel:         'voice',
+    direction:      'inbound',
     tenant_id:        tenantId,
     raw_input:        `Voice menu: pressed ${Digits}`,
     transcript:      null,
     caller_phone:     req.body.From ?? null,
-    direction:      'inbound',
   });
   updateEntry(entry.id, { status: QUEUE_STATUS.QUALIFIED });
 

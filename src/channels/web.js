@@ -47,7 +47,9 @@ function quickRepliesForIntent(intent) {
  * Returns: { text, classification, suggestions, sessionId }
  */
 async function handleChat(req, res) {
-  const tenantId = process.env.DEFAULT_TENANT_ID ?? 'default';
+  // Multi-tenant: resolved by tenantMiddleware in app.js
+  const tenant    = req.tenant ?? { id: process.env.DEFAULT_TENANT_ID ?? 'default', slug: process.env.DEFAULT_TENANT_SLUG ?? 'default' };
+  const tenantId = tenant.id;
 
   // ── Parse body ─────────────────────────────────────────────────────────────
   const {
@@ -186,13 +188,15 @@ async function handleChat(req, res) {
  * Consumed by the embeddable widget on page load.
  */
 function handleWidgetConfig(req, res) {
+  // Multi-tenant widget config
+  const tenant = req.tenant ?? {};
   const config = {
-    company:    process.env.WIDGET_COMPANY_NAME ?? 'HVAC Pro Services',
-    tagline:    process.env.WIDGET_TAGLINE    ?? 'Fast, free quotes — no commitment',
-    accentColor: process.env.WIDGET_ACCENT_COLOR ?? '#1a73e8',
-    welcomeMessage: process.env.WIDGET_WELCOME_MSG ?? "Hi! What can we help you with today?",
-    phone:      process.env.TWILIO_FROM_NUMBER ?? null,
-    mode:       process.env.WIDGET_MODE ?? 'live', // 'live' | 'demo'
+    company:       tenant.name ?? process.env.WIDGET_COMPANY_NAME ?? 'HVAC Pro Services',
+    tagline:       tenant.tagline ?? process.env.WIDGET_TAGLINE ?? 'Fast, free quotes — no commitment',
+    accentColor:   tenant.widgetColor ?? process.env.WIDGET_ACCENT_COLOR ?? '#1a73e8',
+    welcomeMessage: tenant.welcomeMsg ?? process.env.WIDGET_WELCOME_MSG ?? "Hi! What can we help you with today?",
+    phone:         tenant.channels?.twilio?.fromNumber ?? process.env.TWILIO_FROM_NUMBER ?? null,
+    mode:          process.env.WIDGET_MODE ?? 'live',
     features: {
       smsFollowUp:  true,
       quoteRequest: true,
