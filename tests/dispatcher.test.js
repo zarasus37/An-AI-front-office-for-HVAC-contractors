@@ -159,6 +159,73 @@ describe('notifyDispatcher — Twilio errors', () => {
   });
 });
 
+// ── notifyDispatcher — dispatcherPhone override ──────────────────────────────────
+
+describe('notifyDispatcher — dispatcherPhone override', () => {
+  const _orig = globalThis.fetch;
+
+  it('uses the dispatcherPhone override instead of process.env.DISPATCHER_PHONE', async () => {
+    // Global DISPATCHER_PHONE is unset — override must still succeed
+    delete process.env.DISPATCHER_PHONE;
+    process.env.TWILIO_ACCOUNT_SID  = 'ACoverride';
+    process.env.TWILIO_AUTH_TOKEN   = 'overrideauth';
+    process.env.TWILIO_FROM_NUMBER  = '+155****0001';
+
+    let capturedTo;
+    globalThis.fetch = async (url, opts) => {
+      const form = new URLSearchParams(opts.body);
+      capturedTo = form.get('To');
+      return { ok: true, json: async () => ({ sid: 'CA_override_test' }) };
+    };
+
+    const { notifyDispatcher } = await import('../src/lib/dispatcher.js');
+    const result = await notifyDispatcher(makeAudit(), {
+      logFn: () => {},
+      dispatcherPhone: '+19998887777',
+    });
+
+    assert.strictEqual(result, 'CA_override_test');
+    // The override must be what Twilio receives as the To field
+    assert.strictEqual(capturedTo, '+19998887777');
+
+    globalThis.fetch = _orig;
+    delete process.env.TWILIO_ACCOUNT_SID;
+    delete process.env.TWILIO_AUTH_TOKEN;
+    delete process.env.TWILIO_FROM_NUMBER;
+  });
+
+  it('logs the override phone number on success (not the env var)', async () => {
+    // Env var is different from override — success log must show the override
+    process.env.DISPATCHER_PHONE    = '+155****1111'; // not the one we call
+    process.env.TWILIO_ACCOUNT_SID  = 'ACoverride';
+    process.env.TWILIO_AUTH_TOKEN   = 'overrideauth';
+    process.env.TWILIO_FROM_NUMBER  = '+155****0001';
+
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({ sid: 'CA_override_log_test' }),
+    });
+
+    const { notifyDispatcher } = await import('../src/lib/dispatcher.js');
+    const logs = [];
+    await notifyDispatcher(makeAudit(), {
+      logFn: (m) => logs.push(m),
+      dispatcherPhone: '+19998887777', // override
+    });
+
+    const successLog = logs.find((l) => l.includes('Escalation call placed'));
+    assert.ok(successLog, 'Expected success log entry');
+    assert.match(successLog, /\+19998887777/, 'Success log must show override, not env var');
+    assert.ok(!successLog.includes('+155****1111'), 'Success log must NOT show the env var number');
+
+    globalThis.fetch = _orig;
+    delete process.env.DISPATCHER_PHONE;
+    delete process.env.TWILIO_ACCOUNT_SID;
+    delete process.env.TWILIO_AUTH_TOKEN;
+    delete process.env.TWILIO_FROM_NUMBER;
+  });
+});
+
 // ── makeDispatcherNotifier ─────────────────────────────────────────────────────
 
 describe('makeDispatcherNotifier', () => {
@@ -180,6 +247,45 @@ describe('makeDispatcherNotifier', () => {
     assert.match(logs[0], /Dispatcher ESCALATION/);
     // notifyDispatcher also logs its own "DISPATCHER_PHONE not set" message
     assert.strictEqual(logs.length, 2);
+    globalThis.fetch = _orig;
+  });
+
+  it('uses tenant dispatcher override instead of global DISPATCHER_PHONE', async () => {
+    // Global DISPATCHER_PHONE is set to one number, but tenant dispatcher is different
+    process.env.DISPATCHER_PHONE    = '+155****1111';
+    process.env.TWILIO_ACCOUNT_SID  = 'ACtestaccountSID';
+    process.env.TWILIO_AUTH_TOKEN   = 'testauthtoken';
+    process.env.TWILIO_FROM_NUMBER  = '+155****2222';
+
+    const fakeSid = 'CA_tenant_override';
+    let capturedTo;
+    globalThis.fetch = async (url, opts) => {
+      const form = new URLSearchParams(opts.body);
+      capturedTo = form.get('To');
+      return { ok: true, json: async () => ({ sid: fakeSid }) };
+    };
+
+    const { makeDispatcherNotifier } = await import('../src/lib/dispatcher.js');
+    const logs = [];
+    // Tenant B's dispatcher number passed as override
+    const notifier = makeDispatcherNotifier({
+      logFn: (m) => logs.push(m),
+      dispatcherPhone: '+19998887777',
+    });
+    await notifier(makeAudit({ tenant_id: 'tenant-b' }));
+
+    const successLog = logs.find((l) => l.includes('✅'));
+    assert.ok(successLog, 'Expected success log entry');
+    // Success log must show the tenant override, not the global env var
+    assert.match(successLog, /\+19998887777/);
+    assert.ok(!successLog.includes('+155****1111'), 'Must not show global env var in success log');
+    // Twilio must have been called with the override number
+    assert.strictEqual(capturedTo, '+19998887777');
+
+    delete process.env.DISPATCHER_PHONE;
+    delete process.env.TWILIO_ACCOUNT_SID;
+    delete process.env.TWILIO_AUTH_TOKEN;
+    delete process.env.TWILIO_FROM_NUMBER;
     globalThis.fetch = _orig;
   });
 
