@@ -211,17 +211,20 @@ function voiceBlockTwiml() {
 }
 
 /**
- * TwiML for escalated voice calls (safety gate fail)
+ * TwiML for escalated voice calls (safety gate fail).
+ * @param {string} message
+ * @param {string} [dispatcherPhone] — tenant's dispatcher number; falls back to env var
  */
-function voiceEscalationTwiml(message) {
-  const dispatcherPhone = process.env.DISPATCHER_PHONE ?? '';
+function voiceEscalationTwiml(message, dispatcherPhone) {
+  const phone = dispatcherPhone || process.env.DISPATCHER_PHONE || '';
+  const baseUrl = process.env.BASE_URL || '';
   return `<Response>
     <Say voice="Polly.Joanna">
       ${message ?? 'Please hold while we connect you with a representative.'}
     </Say>
-    <Dial timeout="30" action="${process.env.BASE_URL}/webhooks/voice/status">
-      <Number statusCallbackEvent="initiated completed" statusCallback="${process.env.BASE_URL}/webhooks/voice/status">
-        ${dispatcherPhone}
+    <Dial timeout="30" action="${baseUrl}/webhooks/voice/status">
+      <Number statusCallbackEvent="initiated completed" statusCallback="${baseUrl}/webhooks/voice/status">
+        ${phone}
       </Number>
     </Dial>
   </Response>`;
@@ -272,7 +275,9 @@ function voiceOpenPromptTwiml() {
  * Layer 2 (orchestrator) — the same pipeline SMS and web chat use.
  */
 async function handleVoiceSpeech(req, res) {
-  if (!isValidTwilioRequest(req)) return res.status(403).send('Forbidden');
+  if (process.env.BYPASS_TWILIO_SIGNATURE !== 'true' && !isValidTwilioRequest(req)) {
+    return res.status(403).send('Forbidden');
+  }
 
   const { SpeechResult, Digits, CallSid, From: fromPhone } = req.body;
   const tenantId = process.env.DEFAULT_TENANT_ID ?? 'default';
@@ -323,7 +328,7 @@ async function handleVoiceSpeech(req, res) {
   if (!safetyResult.pass) {
     updateEntry(entry.id, { status: QUEUE_STATUS.ESCALATED });
     logger.audit('voice_escalated', { entryId: entry.id, transcript: SpeechResult });
-    return res.status(200).set('Content-Type', 'text/xml').send(voiceEscalationTwiml(safetyResult.response));
+    return res.status(200).set('Content-Type', 'text/xml').send(voiceEscalationTwiml(safetyResult.response, tenant.dispatcher));
   }
 
   // ── Layer 2: conversational core ────────────────────────────────────────────

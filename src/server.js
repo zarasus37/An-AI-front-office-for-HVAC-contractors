@@ -3,6 +3,14 @@
  * Run: node src/server.js  (uses ESM — no --experimental-modules flag needed with "type": "module" in package.json)
  */
 
+import 'dotenv/config';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
+import dotenv from 'dotenv';
+
+// dotenv/config doesn't resolve .env relative to this file — do it explicitly
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: resolve(__dirname, '../.env'), override: true });
 import { createServer } from 'http';
 import app from './app.js';
 import { logger } from './utils/logger.js';
