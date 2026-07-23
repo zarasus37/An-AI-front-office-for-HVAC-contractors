@@ -9,8 +9,6 @@
  * This module is intentionally separate from the TCPA consent-gated outbound path.
  */
 
-const ESCALATION_VOICE_URL = 'https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json';
-
 const DISPATCHER_SCRIPT = (
   'This is an automated safety alert from the HVAC AI front office. ' +
   'A potential emergency has been reported. ' +
@@ -112,12 +110,12 @@ export function makeDispatcherNotifier({ logFn = () => {} } = {}) {
 
     // If Twilio call failed and we have DISPATCHER_PHONE, log it loudly
     if (sid === null && process.env.DISPATCHER_PHONE) {
-      console.warn(`[Dispatcher] ⚠️  Twilio call FAILED — check TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER`);
+      logFn(`[Dispatcher] ⚠️  Twilio call FAILED — check TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER`);
     }
 
     // Log regardless — visibility into what the dispatcher did
     if (sid !== null) {
-      console.log(`[Dispatcher] ✅ Call placed to ${dispatcherPhone}, SID: ${sid}`);
+      logFn(`[Dispatcher] ✅ Call placed to ${process.env.DISPATCHER_PHONE}, SID: ${sid}`);
     }
   };
 }

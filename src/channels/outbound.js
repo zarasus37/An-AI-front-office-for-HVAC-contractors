@@ -7,7 +7,7 @@
  * Twilio REST API is used directly (no SDK) to avoid SDK overhead.
  */
 
-import { consentStore, CONSENT_TYPES } from '../compliance/consent-store.js';
+import { consentStore as _consentStore, CONSENT_TYPES } from '../compliance/consent-store.js';
 import { twimlResponse } from '../utils/twiml.js';
 
 /**
@@ -16,16 +16,18 @@ import { twimlResponse } from '../utils/twiml.js';
  *
  * @param {string} customerId
  * @param {string} phone  — E.164 phone number
+ * @param {ConsentStore} [store] — consent store to use (defaults to module-level)
  * @returns {{ allowed: boolean, reason: string|null }}
  */
-export function canSendOutboundSms(customerId, phone) {
+export function canSendOutboundSms(customerId, phone, store) {
+  const consent = store ?? _consentStore;
   // No customer record — send to phone number as fallback
   if (!customerId) {
     return { allowed: true, reason: null };
   }
 
   // TCPA: must have active SMS consent
-  if (!consentStore.hasConsent(customerId, {
+  if (!consent.hasConsent(customerId, {
     channel:     'sms',
     consentType: CONSENT_TYPES.SMS_INBOUND,
   })) {
@@ -50,10 +52,11 @@ export function canSendOutboundSms(customerId, phone) {
  * @returns {Promise<string>} message SID
  */
 export async function sendOutboundSms(opts) {
-  const { to, body, customerId, logger: log = () => {} } = opts;
+  const { to, body, customerId, logger: log = () => {}, consentStore: store } = opts;
+  const consent = store ?? _consentStore;
 
   // ── TCPA check ──────────────────────────────────────────────────────────────
-  const { allowed, reason } = canSendOutboundSms(customerId, to);
+  const { allowed, reason } = canSendOutboundSms(customerId, to, consent);
   if (!allowed) {
     log(`[TCPA BLOCK] Refused to send SMS to ${to}: ${reason}`);
     throw new Error(`TCPA blocked: ${reason}`);

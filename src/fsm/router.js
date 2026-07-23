@@ -86,9 +86,9 @@ export async function pushLeadToFsm(queueEntry) {
 
   const customer = await adapter.upsertCustomer({
     phone:   queueEntry.caller_phone,
-    email:    null, // TODO: collect email in intake
-    name:     queueEntry.contact_name ?? null,
-    address:  queueEntry.service_address ?? null,
+    email:   queueEntry.caller_email ?? null,
+    name:    queueEntry.contact_name ?? null,
+    address: queueEntry.service_address ?? null,
   });
 
   const job = await adapter.createJob({

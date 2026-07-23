@@ -8,6 +8,7 @@ import app from './app.js';
 import { logger } from './utils/logger.js';
 import { initializeAdapters } from './fsm/router.js';
 import { flush as flushQueue } from './queue/store.js';
+import { flush as flushSessions } from './conversation/session.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -33,11 +34,16 @@ server.listen(PORT, HOST, async () => {
 // ── Graceful shutdown ───────────────────────────────────────────────────────────
 async function shutdown(signal) {
   logger.info(`Received ${signal} — closing server...`);
-  // Flush queue snapshot before exiting so no leads are lost
+  // Flush queue and session snapshots before exiting
   try {
     await flushQueue();
   } catch (e) {
     logger.warn('Queue flush error:', e.message);
+  }
+  try {
+    await flushSessions();
+  } catch (e) {
+    logger.warn('Session flush error:', e.message);
   }
   server.close(() => {
     logger.info('Server closed.');

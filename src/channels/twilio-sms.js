@@ -12,6 +12,7 @@
 
 import twilio from 'twilio';
 import { scan } from '../lib/safety-gate.js';
+import { makeDispatcherNotifier } from '../lib/dispatcher.js';
 import { consentStore } from '../compliance/consent-store.js';
 import { TcpaStopWordHandler } from '../compliance/consent-store.js';
 import { enqueue, updateEntry, QUEUE_STATUS } from '../queue/store.js';
@@ -154,10 +155,7 @@ async function handleInbound(req, res) {
     tenantId,
     messageId: messageSid,
     logFn: (entry) => { logger.audit('safety_gate', entry); },
-    notifyDispatcherFn: async (entry) => {
-      // TODO: wire to PagerDuty / SMS to dispatcher / webhook
-      logger.warn('ESCALATION — dispatcher notified', { entry });
-    },
+    notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => logger.audit('dispatcher', e) }),
   });
 
   // ── 5. Enqueue ─────────────────────────────────────────────────────────────

@@ -11,6 +11,8 @@
 
 import twilio from 'twilio';
 import { scan }             from '../lib/safety-gate.js';
+import { makeDispatcherNotifier } from '../lib/dispatcher.js';
+import { processMessage }   from '../conversation/orchestrator.js';
 import { enqueue, updateEntry, QUEUE_STATUS } from '../queue/store.js';
 import { logger }           from '../utils/logger.js';
 import {
@@ -144,9 +146,7 @@ async function handleVoiceInbound(req, res) {
       tenantId,
       messageId: callSid,
       logFn: (e) => logger.audit('safety_gate', e),
-      notifyDispatcherFn: async (e) => {
-        logger.warn('VOICE ESCALATION', { e });
-      },
+      notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => logger.audit('dispatcher', e) }),
     });
   } catch {
     safetyResult = { pass: true, triggers: [], severity: 'low' };
@@ -170,10 +170,10 @@ async function handleVoiceInbound(req, res) {
   // Mark as qualified and proceed to call flow
   updateEntry(entry.id, { status: QUEUE_STATUS.QUALIFIED });
 
-  // Transfer to dispatcher / IVR — TODO: wire to L2 conversational core
+  // Transfer to dispatcher / IVR — now uses open speech prompt
   return res.status(200)
     .set('Content-Type', 'text/xml')
-    .send(voiceMainMenuTwiml());
+    .send(voiceOpenPromptTwiml());
 }
 
 // ── CIPA consent recording ─────────────────────────────────────────────────────
@@ -214,21 +214,22 @@ function voiceBlockTwiml() {
  * TwiML for escalated voice calls (safety gate fail)
  */
 function voiceEscalationTwiml(message) {
+  const dispatcherPhone = process.env.DISPATCHER_PHONE ?? '';
   return `<Response>
     <Say voice="Polly.Joanna">
       ${message ?? 'Please hold while we connect you with a representative.'}
     </Say>
-    <Dial timeout="30" action="/webhooks/voice/status">
+    <Dial timeout="30" action="${process.env.BASE_URL}/webhooks/voice/status">
       <Number statusCallbackEvent="initiated completed" statusCallback="${process.env.BASE_URL}/webhooks/voice/status">
-        ${(tenant.dispatcher ?? process.env.DISPATCHER_PHONE) ?? ''}
+        ${dispatcherPhone}
       </Number>
     </Dial>
   </Response>`;
 }
 
 /**
- * Main voice menu TwiML — greets and offers options.
- * TODO: replace with L2 conversational core via Twilio <Connect> to抿
+ * DTMF fallback menu — used only when the speech prompt times out or
+ * the caller presses a digit without speaking.
  */
 function voiceMainMenuTwiml() {
   return `<Response>
@@ -245,6 +246,96 @@ function voiceMainMenuTwiml() {
     <Say voice="Polly.Joanna">No response received. A technician will follow up shortly. Goodbye.</Say>
     <Hangup/>
   </Response>`;
+}
+
+/**
+ * Open prompt TwiML — asks an open question and listens for speech (or DTMF).
+ * Used in Stage 2 to replace the DTMF-only menu.
+ */
+function voiceOpenPromptTwiml() {
+  return `<Response>
+    <Gather input="speech dtmf" numDigits="1" speechTimeout="auto" action="/webhooks/voice/speech" method="POST"
+            hints="gas leak, carbon monoxide, smoke, burning smell, no heat, no cooling, water leak, furnace, air conditioner, thermostat, schedule, appointment, price, estimate">
+      <Say voice="Polly.Joanna">
+        Thanks for calling. Tell me what's going with your HVAC system —
+        or press 1 to schedule service, 2 for a price estimate, or 3 for billing.
+      </Say>
+    </Gather>
+    <Say voice="Polly.Joanna">No response received. A technician will follow up shortly. Goodbye.</Say>
+    <Hangup/>
+  </Response>`;
+}
+
+/**
+ * Handle speech-to-text result from Twilio <Gather input="speech">.
+ * Routes the caller's spoken words through Layer 0 (safety gate) and
+ * Layer 2 (orchestrator) — the same pipeline SMS and web chat use.
+ */
+async function handleVoiceSpeech(req, res) {
+  if (!isValidTwilioRequest(req)) return res.status(403).send('Forbidden');
+
+  const { SpeechResult, Digits, CallSid, From: fromPhone } = req.body;
+  const tenantId = process.env.DEFAULT_TENANT_ID ?? 'default';
+
+  // Digit pressed with no speech — fall back to DTMF menu
+  if (!SpeechResult && Digits) {
+    return handleVoiceGather(req, res);
+  }
+
+  // Nothing captured — replay the open prompt
+  if (!SpeechResult) {
+    return res.status(200).set('Content-Type', 'text/xml').send(voiceOpenPromptTwiml());
+  }
+
+  const entry = enqueue({
+    channel:       'voice',
+    tenant_id:     tenantId,
+    raw_input:     SpeechResult,
+    transcript:   SpeechResult,
+    caller_phone: fromPhone ?? null,
+    direction:    'inbound',
+  });
+
+  // ── Layer 0: safety gate against actual spoken words ─────────────────────────
+  let safetyResult;
+  try {
+    safetyResult = await scan(SpeechResult, {
+      channel:    'voice',
+      tenantId,
+      messageId:  CallSid,
+      logFn:     (e) => logger.audit('safety_gate', e),
+      notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => logger.audit('dispatcher', e) }),
+    });
+  } catch {
+    safetyResult = { pass: true, triggers: [], severity: 'low' };
+  }
+
+  updateEntry(entry.id, {
+    safety_gate_passed: safetyResult.pass,
+    safety_gate_result: safetyResult.triggers.length > 0
+      ? { triggered: true, triggers: safetyResult.triggers, severity: safetyResult.severity }
+      : { triggered: false },
+  });
+
+  if (!safetyResult.pass) {
+    updateEntry(entry.id, { status: QUEUE_STATUS.ESCALATED });
+    logger.audit('voice_escalated', { entryId: entry.id, transcript: SpeechResult });
+    return res.status(200).set('Content-Type', 'text/xml').send(voiceEscalationTwiml(safetyResult.response));
+  }
+
+  // ── Layer 2: conversational core ────────────────────────────────────────────
+  let outbound;
+  try {
+    outbound = await processMessage(SpeechResult, fromPhone ?? 'unknown', tenantId, null, entry.id);
+    updateEntry(entry.id, { llm_classification: outbound.classification, status: QUEUE_STATUS.QUALIFIED });
+  } catch (err) {
+    logger.error('Voice Layer 2 failed', { error: err.message });
+    outbound = { text: 'Thanks — a technician will follow up with you shortly.' };
+  }
+
+  return res.status(200).set('Content-Type', 'text/xml').send(
+    `<Response><Say voice="Polly.Joanna">${outbound.text}</Say><Hangup/></Response>`
+  );
 }
 
 /**
@@ -304,9 +395,10 @@ export async function registerVoiceRoutes(app) {
   const { Router } = await import('express');
   const r = Router();
 
-  r.post('/webhooks/voice',        handleVoiceInbound);
+  r.post('/webhooks/voice',         handleVoiceInbound);
   r.post('/webhooks/voice/gather',  handleVoiceGather);
-  r.post('/webhooks/voice/status',  handleVoiceStatus);
+  r.post('/webhooks/voice/speech',  handleVoiceSpeech);
+  r.post('/webhooks/voice/status',   handleVoiceStatus);
 
   app.use(r);
 }
