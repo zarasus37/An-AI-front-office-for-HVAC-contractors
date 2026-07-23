@@ -146,7 +146,7 @@ async function handleVoiceInbound(req, res) {
       tenantId,
       messageId: callSid,
       logFn: (e) => logger.audit('safety_gate', e),
-      notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => logger.audit('dispatcher', e) }),
+      notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => logger.audit('dispatcher', e), dispatcherPhone: tenant.dispatcher }),
     });
   } catch {
     safetyResult = { pass: true, triggers: [], severity: 'low' };
@@ -287,6 +287,9 @@ async function handleVoiceSpeech(req, res) {
     return res.status(200).set('Content-Type', 'text/xml').send(voiceOpenPromptTwiml());
   }
 
+  const { tenant: resolvedTenant } = resolveTenant(req);
+  const tenant = resolvedTenant ?? { id: tenantId, dispatcher: process.env.DISPATCHER_PHONE ?? null };
+
   const entry = enqueue({
     channel:       'voice',
     tenant_id:     tenantId,
@@ -304,7 +307,7 @@ async function handleVoiceSpeech(req, res) {
       tenantId,
       messageId:  CallSid,
       logFn:     (e) => logger.audit('safety_gate', e),
-      notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => logger.audit('dispatcher', e) }),
+      notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => logger.audit('dispatcher', e), dispatcherPhone: tenant.dispatcher }),
     });
   } catch {
     safetyResult = { pass: true, triggers: [], severity: 'low' };

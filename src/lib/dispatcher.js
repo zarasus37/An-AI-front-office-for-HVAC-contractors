@@ -27,13 +27,13 @@ const DISPATCHER_SCRIPT = (
  * @param {Function} [opts.logFn] — optional logger
  * @returns {Promise<string>} Twilio call SID
  */
-export async function notifyDispatcher(auditEntry, { logFn = () => {} } = {}) {
-  const dispatcherPhone = process.env.DISPATCHER_PHONE;
+export async function notifyDispatcher(auditEntry, { logFn = () => {}, dispatcherPhone } = {}) {
+  const phone = dispatcherPhone || process.env.DISPATCHER_PHONE;
   const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
   const twilioAuthToken  = process.env.TWILIO_AUTH_TOKEN;
   const twilioFromNumber = process.env.TWILIO_FROM_NUMBER;
 
-  if (!dispatcherPhone) {
+  if (!phone) {
     logFn(`[Dispatcher] DISPATCHER_PHONE not set — skipping escalation call`);
     return null;
   }
@@ -51,7 +51,6 @@ export async function notifyDispatcher(auditEntry, { logFn = () => {} } = {}) {
     .replace('${message}', message.slice(0, 200))
     .replace('${time}', time);
 
-  // Build TwiML that speaks the alert and stays on the line
   const twiml = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<Response>',
@@ -63,7 +62,7 @@ export async function notifyDispatcher(auditEntry, { logFn = () => {} } = {}) {
 
   const url = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Calls.json`;
   const form = new URLSearchParams({
-    To:       dispatcherPhone,
+    To:       phone,
     From:     twilioFromNumber,
     Url:      `data:text/xml;charset=utf-8,${encodeURIComponent(twiml)}`,
     Method:   'POST',
@@ -88,7 +87,7 @@ export async function notifyDispatcher(auditEntry, { logFn = () => {} } = {}) {
     }
 
     const data = await res.json();
-    logFn(`[Dispatcher] Escalation call placed to ${dispatcherPhone}, SID: ${data.sid}`);
+    logFn(`[Dispatcher] Escalation call placed to ${phone}, SID: ${data.sid}`);
     return data.sid;
   } catch (err) {
     logFn(`[Dispatcher] Failed to place escalation call: ${err.message}`);
@@ -99,23 +98,27 @@ export async function notifyDispatcher(auditEntry, { logFn = () => {} } = {}) {
 /**
  * Returns a configured dispatcher notifyFn for use in runSafetyGate / scan.
  * Falls back to console.log when DISPATCHER_PHONE is not configured.
+ *
+ * @param {{ logFn?: Function, dispatcherPhone?: string }} [opts]
  */
-export function makeDispatcherNotifier({ logFn = () => {} } = {}) {
+export function makeDispatcherNotifier({ logFn = () => {}, dispatcherPhone } = {}) {
   return async (auditEntry) => {
     // Always log first
     logFn(`[Dispatcher ESCALATION] triggers=${JSON.stringify(auditEntry.triggers)}, phone=${auditEntry.phone ?? 'unknown'}`);
 
     // Try to place the real call
-    const sid = await notifyDispatcher(auditEntry, { logFn });
+    const sid = await notifyDispatcher(auditEntry, { logFn, dispatcherPhone });
 
-    // If Twilio call failed and we have DISPATCHER_PHONE, log it loudly
-    if (sid === null && process.env.DISPATCHER_PHONE) {
+    const resolvedPhone = dispatcherPhone || process.env.DISPATCHER_PHONE;
+
+    // If Twilio call failed and we have a phone number, log it loudly
+    if (sid === null && resolvedPhone) {
       logFn(`[Dispatcher] ⚠️  Twilio call FAILED — check TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER`);
     }
 
     // Log regardless — visibility into what the dispatcher did
     if (sid !== null) {
-      logFn(`[Dispatcher] ✅ Call placed to ${process.env.DISPATCHER_PHONE}, SID: ${sid}`);
+      logFn(`[Dispatcher] ✅ Call placed to ${resolvedPhone}, SID: ${sid}`);
     }
   };
 }

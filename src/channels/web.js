@@ -107,7 +107,7 @@ async function handleChat(req, res) {
     tenantId,
     messageId: clientSessionId ?? crypto.randomUUID(),
     logFn:    (e) => appLogger.audit('safety_gate', e),
-    notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => appLogger.audit('dispatcher', e) }),
+    notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => appLogger.audit('dispatcher', e), dispatcherPhone: tenant.dispatcher }),
   });
 
   // Enqueue
