@@ -155,7 +155,7 @@ async function handleInbound(req, res) {
     tenantId,
     messageId: messageSid,
     logFn: (entry) => { logger.audit('safety_gate', entry); },
-    notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => logger.audit('dispatcher', e) }),
+    notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => logger.audit('dispatcher', e), dispatcherPhone: tenant.dispatcher }),
   });
 
   // ── 5. Enqueue ─────────────────────────────────────────────────────────────
