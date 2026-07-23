@@ -10,6 +10,8 @@
  * Audit log schema matches SPEC.md Layer 0.
  */
 
+import { makeDispatcherNotifier } from './dispatcher.js';
+
 export const EMERGENCY_PATTERNS = [
   // Gas / CO / Fire — highest priority, most dangerous false negative
   // ── Gas / CO / Fire ──────────────────────────────────────────────────────────
@@ -143,8 +145,6 @@ export async function scan(text, opts = {}) {
  * runSafetyGate — convenience wrapper for use inside a route handler
  * Returns the scan result and sets HTTP response fields.
  */
-import { makeDispatcherNotifier } from './dispatcher.js';
-
 export async function runSafetyGate(req) {
   const body = req.body || {};
   const text = body.transcript || body.message || body.raw_input || '';

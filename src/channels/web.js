@@ -8,6 +8,7 @@
  */
 
 import { scan } from '../lib/safety-gate.js';
+import { makeDispatcherNotifier } from '../lib/dispatcher.js';
 import { consentStore } from '../compliance/consent-store.js';
 import { TcpaStopWordHandler } from '../compliance/consent-store.js';
 import { enqueue, updateEntry, QUEUE_STATUS } from '../queue/store.js';
@@ -106,9 +107,7 @@ async function handleChat(req, res) {
     tenantId,
     messageId: clientSessionId ?? crypto.randomUUID(),
     logFn:    (e) => appLogger.audit('safety_gate', e),
-    notifyDispatcherFn: async (e) => {
-      appLogger.warn('ESCALATION in web chat', { e });
-    },
+    notifyDispatcherFn: makeDispatcherNotifier({ logFn: (e) => appLogger.audit('dispatcher', e) }),
   });
 
   // Enqueue
@@ -119,6 +118,7 @@ async function handleChat(req, res) {
     raw_input:        message,
     transcript:      null,
     caller_phone:     chatPhone,
+    caller_email:     email ?? null,
     service_address: address ?? null,
     contact_name:    name ?? null,
   });

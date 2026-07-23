@@ -8,7 +8,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { SYSTEM_PROMPT, PRICE_FALLBACK } from './system-prompt.js';
+import { SYSTEM_PROMPT } from './system-prompt.js';
 
 // ── Raw LLM call — Anthropic Claude ─────────────────────────────────────────────
 
@@ -50,78 +50,7 @@ async function callClaude(message, history, safetyGateResult, pricebookMatch) {
   return response.content[0].text;
 }
 
-// ── Raw LLM call — Ollama Cloud (OpenAI-compatible API) ───────────────────────
-
-/**
- * Ollama Cloud fallback when Claude is unavailable or fails.
- * @param {string} message
- * @param {string} history
- * @param {object} safetyGateResult
- * @param {object|null} pricebookMatch
- * @returns {Promise<string>} Raw model text response
- */
-async function callOllama(message, history, safetyGateResult, pricebookMatch) {
-  const baseUrl    = process.env.OLLAMA_BASE_URL    ?? 'https://ollama.com';
-  const apiKey     = process.env.OLLAMA_API_KEY;
-  const model      = process.env.OLLAMA_MODEL       ?? 'nemotron-3-nano:30b';
-  const modelTag   = model.includes(':') ? model : `${model}:latest`;
-
-  const safetyBlock = safetyGateResult?.triggered
-    ? `SAFETY GATE ALERT: The following emergency patterns were detected — respond with a safety acknowledgment and do NOT attempt to schedule an appointment.\nTriggers: ${JSON.stringify(safetyGateResult.triggers.map(t => t.label))}`
-    : 'Safety gate: passed (no emergency detected).';
-
-  const priceBlock = pricebookMatch
-    ? `Confirmed pricebook entry: ${pricebookMatch.service_name} — $${pricebookMatch.price}`
-    : 'No confirmed pricebook entry for this request.';
-
-  const userContent = history
-    ? `Prior conversation:\n${history}\n\nCurrent message: ${message}`
-    : `Current message: ${message}`;
-
-  const systemContent = SYSTEM_PROMPT;
-
-  const url = `${baseUrl}/v1/chat/completions`;
-  const body = JSON.stringify({
-    model: modelTag,
-    max_tokens: 1024,
-    system:    `${systemContent}\n\n${safetyBlock}\n\n${priceBlock}`,
-    messages: [{ role: 'user', content: userContent }],
-  });
-
-  // Follow redirects manually so POST method is preserved (Node fetch drops to GET on 301/302)
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type':  'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
-      body,
-      signal: AbortSignal.timeout(Number(process.env.OLLAMA_TIMEOUT_MS) || 60000),
-    });
-
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('Location');
-      if (!location) throw new Error(`Ollama redirected with no Location header (${response.status})`);
-      // Use absolute URL if Location is relative
-      url = location.startsWith('http') ? location : new URL(location, baseUrl).toString();
-      continue;
-    }
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`Ollama ${response.status}: ${err}`);
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
-  }
-
-  throw new Error('Ollama too many redirects');
-}
-
-// ── JSON extraction ─────────────────────────────────────────────────────────────
+// ── JSON extraction ──────────────────────────────────────────────────────────────
 
 /**
  * Extract the classification JSON from Claude's text response.
@@ -230,35 +159,20 @@ export { ruleBasedClassify };
  * @returns {Promise<{ classification: object, rawResponse: string|null }>}
  */
 export async function classify(message, history = '', safetyGateResult = null, pricebookMatch = null) {
-  // Check env lazily — not at module import time — so tests can override
   const hasAnthropicKey = Boolean(process.env.ANTHROPIC_API_KEY);
-  const hasOllamaKey     = Boolean(process.env.OLLAMA_API_KEY);
 
-  // ── Try Claude ──────────────────────────────────────────────────────────────
   if (hasAnthropicKey) {
     try {
       const rawResponse = await callClaude(message, history, safetyGateResult, pricebookMatch);
       const parsed    = extractClassification(rawResponse);
       const sanitized = sanitize(parsed);
-      return { classification: sanitized, rawResponse };
+      if (sanitized) return { classification: sanitized, rawResponse };
+      console.warn('[Classifier] Claude response unparseable — falling back to rules');
     } catch (err) {
-      console.warn(`[Classifier] Claude call failed: ${err.message} — trying Ollama fallback`);
+      console.warn(`[Classifier] Claude call failed: ${err.message} — falling back to rules`);
     }
   }
 
-  // ── Try Ollama Cloud ─────────────────────────────────────────────────────────
-  if (hasOllamaKey) {
-    try {
-      const rawResponse = await callOllama(message, history, safetyGateResult, pricebookMatch);
-      const parsed    = extractClassification(rawResponse);
-      const sanitized = sanitize(parsed);
-      return { classification: sanitized, rawResponse };
-    } catch (err) {
-      console.error(`[Classifier] Ollama call failed: ${err.message} — falling back to rules`);
-    }
-  }
-
-  // ── Rule-based fallback ─────────────────────────────────────────────────────
   const fallback = ruleBasedClassify(message);
   return { classification: fallback, rawResponse: null };
 }

@@ -101,6 +101,7 @@ _init();
  * @property {string}   raw_input
  * @property {string|null} transcript
  * @property {string|null} caller_phone    E.164
+ * @property {string|null} caller_email
  * @property {string|null} service_address
  * @property {string|null} contact_name
  * @property {string}   received_at       ISO8601
