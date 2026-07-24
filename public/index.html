@@ -3,117 +3,275 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HVAC AI — Front Office</title>
+  <title>HVAC AI Intake System</title>
+  <meta name="description" content="AI-powered intake system for HVAC contractors — SMS, voice, and web chat automation.">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #0a0a0f;
       color: #e0e0e0;
       min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    .wrapper {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 4rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #00d4ff;
+      border: 1px solid #00d4ff;
+      border-radius: 999px;
+      padding: 0.25rem 0.9rem;
+      margin-bottom: 1.25rem;
+    }
+
+    h1 {
+      font-size: clamp(1.8rem, 4vw, 2.75rem);
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 0.75rem;
+    }
+
+    .tagline {
+      font-size: 1.05rem;
+      color: #9aa0aa;
+      max-width: 560px;
+      margin: 0 auto;
+    }
+
+    .status-bar {
       display: flex;
       align-items: center;
       justify-content: center;
-    }
-    .container {
-      text-align: center;
-      max-width: 600px;
-      padding: 2rem;
-    }
-    h1 {
-      font-size: 2.5rem;
-      font-weight: 700;
-      color: #00d4ff;
-      margin-bottom: 0.5rem;
-    }
-    .tagline {
-      font-size: 1.1rem;
-      color: #888;
-      margin-bottom: 3rem;
-    }
-    .status-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-      text-align: left;
-    }
-    .card {
+      gap: 0.6rem;
+      margin: 2rem auto 0;
       background: #12121a;
       border: 1px solid #1e1e2e;
-      border-radius: 8px;
-      padding: 1.25rem;
+      border-radius: 999px;
+      padding: 0.6rem 1.25rem;
+      max-width: fit-content;
+      font-size: 0.9rem;
     }
-    .card .label {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: #666;
-      margin-bottom: 0.5rem;
+
+    .status-dot {
+      width: 0.6rem;
+      height: 0.6rem;
+      border-radius: 50%;
+      background: #666;
+      flex-shrink: 0;
+      transition: background 0.2s;
     }
-    .card .value {
-      font-size: 1.1rem;
-      font-weight: 600;
+
+    .status-dot.ok { background: #00e676; box-shadow: 0 0 8px #00e67688; }
+    .status-dot.error { background: #ff5252; box-shadow: 0 0 8px #ff525288; }
+    .status-dot.pending { background: #ffb300; }
+
+    .status-text { color: #ccc; }
+    .status-text .label { color: #666; margin-right: 0.35rem; }
+
+    section.about {
+      background: #12121a;
+      border: 1px solid #1e1e2e;
+      border-radius: 12px;
+      padding: 2rem;
+      margin-bottom: 2.5rem;
     }
-    .value.ok { color: #00e676; }
-    .value.live { color: #00d4ff; }
+
+    section.about h2 {
+      font-size: 1.2rem;
+      color: #00d4ff;
+      margin-bottom: 0.75rem;
+    }
+
+    section.about p {
+      color: #b5b9c0;
+      margin-bottom: 1rem;
+    }
+
+    section.about p:last-child { margin-bottom: 0; }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .feature-card {
+      background: #12121a;
+      border: 1px solid #1e1e2e;
+      border-radius: 10px;
+      padding: 1.5rem;
+    }
+
+    .feature-card .icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .feature-card h3 {
+      font-size: 1rem;
+      color: #fff;
+      margin-bottom: 0.4rem;
+    }
+
+    .feature-card p {
+      font-size: 0.9rem;
+      color: #9aa0aa;
+    }
+
     .cta {
-      margin-top: 3rem;
+      text-align: center;
+      margin-bottom: 3rem;
     }
+
     .cta a {
       display: inline-block;
       background: #00d4ff;
       color: #0a0a0f;
       text-decoration: none;
       font-weight: 700;
-      padding: 0.875rem 2rem;
+      padding: 0.9rem 2.25rem;
       border-radius: 6px;
-      transition: opacity 0.2s;
+      font-size: 1rem;
+      transition: opacity 0.2s, transform 0.2s;
     }
-    .cta a:hover { opacity: 0.85; }
-    .api {
-      margin-top: 2rem;
+
+    .cta a:hover { opacity: 0.85; transform: translateY(-1px); }
+
+    .cta .hint {
+      display: block;
+      margin-top: 0.75rem;
       font-size: 0.85rem;
+      color: #666;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 0.8rem;
       color: #444;
     }
-    .api code {
+
+    footer code {
       background: #12121a;
       padding: 0.2em 0.5em;
       border-radius: 4px;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
+      color: #888;
+    }
+
+    footer .endpoints {
+      margin-top: 0.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      justify-content: center;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>HVAC AI</h1>
-    <p class="tagline">AI-powered contractor front office</p>
+  <div class="wrapper">
+    <header>
+      <span class="badge">HVAC Contractor Automation</span>
+      <h1>HVAC AI Intake System</h1>
+      <p class="tagline">
+        AI-powered customer intake for HVAC contractors — capturing, qualifying, and
+        routing service requests across SMS, voice, and web chat, 24/7.
+      </p>
 
-    <div class="status-grid">
-      <div class="card">
-        <div class="label">API Status</div>
-        <div class="value ok">Operational</div>
+      <div class="status-bar">
+        <span class="status-dot pending" id="status-dot"></span>
+        <span class="status-text">
+          <span class="label">System status:</span>
+          <span id="status-text">Checking&hellip;</span>
+        </span>
       </div>
-      <div class="card">
-        <div class="label">Widget</div>
-        <div class="value live">Live</div>
+    </header>
+
+    <section class="about">
+      <h2>What this system does</h2>
+      <p>
+        HVAC AI Intake System acts as an always-on front office for HVAC contractors.
+        It answers inbound texts, calls, and web chats, understands what a customer
+        needs, and captures the details a dispatcher needs to book the job — all
+        without a human having to pick up the phone first.
+      </p>
+      <p>
+        Every conversation is screened by a built-in safety gate for emergencies
+        (like gas leaks or carbon monoxide) and escalated immediately to a live
+        dispatcher when needed. Everything else is queued, classified, and handed
+        off cleanly for scheduling.
+      </p>
+    </section>
+
+    <div class="features">
+      <div class="feature-card">
+        <div class="icon">💬</div>
+        <h3>Web Chat</h3>
+        <p>An embeddable chat widget that qualifies leads and answers pricing questions in real time.</p>
       </div>
-      <div class="card">
-        <div class="label">Safety Gate</div>
-        <div class="value ok">Active</div>
+      <div class="feature-card">
+        <div class="icon">✉️</div>
+        <h3>SMS Intake</h3>
+        <p>Two-way texting via Twilio, with TCPA-compliant consent and stop-word handling.</p>
       </div>
-      <div class="card">
-        <div class="label">Dispatcher</div>
-        <div class="value ok">Configured</div>
+      <div class="feature-card">
+        <div class="icon">📞</div>
+        <h3>Voice</h3>
+        <p>CIPA-aware call handling that routes urgent issues straight to a technician.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🚨</div>
+        <h3>Safety Gate</h3>
+        <p>Automatic detection and escalation of gas leaks, CO alarms, and other emergencies.</p>
       </div>
     </div>
 
     <div class="cta">
-      <a href="/widget.html">Open Chat Widget</a>
+      <a href="/web/chat">Open the Chat Interface</a>
+      <span class="hint">Talk to the AI intake assistant right now</span>
     </div>
 
-    <div class="api">
-      API: <code>POST /web/chat</code> &nbsp;|&nbsp; <code>GET /health</code>
-    </div>
+    <footer>
+      <div>Core endpoints</div>
+      <div class="endpoints">
+        <code>GET /health</code>
+        <code>GET /web/chat</code>
+        <code>POST /webhooks/sms/inbound</code>
+        <code>POST /webhooks/voice</code>
+      </div>
+    </footer>
   </div>
+
+  <script>
+    (async function checkHealth() {
+      const dot = document.getElementById('status-dot');
+      const text = document.getElementById('status-text');
+      try {
+        const res = await fetch('/health', { cache: 'no-store' });
+        if (!res.ok) throw new Error('Bad response: ' + res.status);
+        const data = await res.json();
+        dot.className = 'status-dot ok';
+        text.textContent = 'Operational (' + (data.status || 'ok') + ')';
+      } catch (err) {
+        dot.className = 'status-dot error';
+        text.textContent = 'Unavailable';
+      }
+    })();
+  </script>
 </body>
 </html>
